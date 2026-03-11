@@ -95,8 +95,8 @@ const CONTEST_CHARM = {
 
 // ── CAR: 인증 시에만 / 럭셔리만 의미 있음 ──
 const CAR_CHARM = {
-  luxury:  { male: "럭셔리한 라이프", female: "럭셔리한 라이프" },
-  premium: { male: "센스 있는 취향",  female: "센스 있는 취향" },
+  luxury:  { male: "여유로운 라이프", female: "여유로운 라이프" },
+  premium: { male: "세련된 라이프",  female: "세련된 라이프" },
 };
 const LUXURY_CARS = ["porsche","lamborghini","ferrari","maserati","bentley","rolls_royce"];
 const PREMIUM_CARS = ["mercedes_benz","bmw","audi","lexus","genesis","tesla","land_rover","jaguar","volvo"];
