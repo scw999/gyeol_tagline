@@ -1,16 +1,14 @@
 import { useState, useMemo, useCallback } from "react";
 
-// ============================================================
-// 결하다 소개 문구 v4
-// 
-// v4 변경:
-// 1) "꼼꼼한" → 긍정 표현으로 교체
-// 2) 직장명(개인정보) → 카테고리만 노출 (대기업 재직 등)
-// 3) 옵션 인증(키/체형/차/부모자산/부모직업) 여부에 따라 문구 차별화
-//    인증 완료 항목이 많을수록 매력 포인트 추가 가능
-// ============================================================
+// ════════════════════════════════════════════════════════════
+// 결하다 소개 문구 생성 시스템 v5
+// 기술명세서 v5 완전 반영
+// - 스펙 카테고리 교차 비교 (통합 점수 1~10)
+// - 등급 매핑 테이블 자산/연봉 전체 7단계 반영
+// - 저등급/미인증 회원 성향 기반 폴백 보장
+// ════════════════════════════════════════════════════════════
 
-// ── TRAIT: 성향 → 매력 키워드 ──
+// ── 1. 성향 키워드 ──
 const TRAIT_CHARM = {
   개방성:   { male: "지적 호기심",      female: "감각적 취향" },
   성실성:   { male: "믿음직한 책임감",  female: "차분한 실행력" },
@@ -40,60 +38,29 @@ const COMBO_CHARM = {
   "성실성+외향성":    { male: "실행력과 유쾌한 에너지",   female: "활발함과 차분한 실력" },
 };
 
-// ── APPEARANCE: 외모 → 명사구 ──
+// ── 2. 외모 키워드 ──
 const APP_WORD = {
-  APPEARANCE_TOP_1:    { male: "압도적 비주얼",   female: "눈부신 비주얼" },
-  APPEARANCE_TOP_5:    { male: "훈훈한 외모",     female: "돋보이는 미모" },
-  APPEARANCE_TOP_20:   { male: "호감형 외모",     female: "사랑스러운 이미지" },
-  APPEARANCE_HIGH_AVG: { male: "깔끔한 인상",     female: "밝은 인상" },
-  APPEARANCE_ABOVE_AVG:{ male: "호감 가는 인상",  female: "밝은 분위기" },
-  APPEARANCE_AVG:      { male: null, female: null },
-  APPEARANCE_BELOW_AVG:{ male: null, female: null },
+  APPEARANCE_TOP_1:    { male: "압도적 비주얼",   female: "눈부신 비주얼",      priority: 10 },
+  APPEARANCE_TOP_5:    { male: "훈훈한 외모",     female: "돋보이는 미모",       priority: 8 },
+  APPEARANCE_TOP_20:   { male: "호감형 외모",     female: "사랑스러운 이미지",   priority: 5 },
+  APPEARANCE_HIGH_AVG: { male: "깔끔한 인상",     female: "밝은 인상",           priority: 3 },
+  APPEARANCE_ABOVE_AVG:{ male: "호감 가는 인상",  female: "밝은 분위기",         priority: 1 },
+  APPEARANCE_AVG:      { male: null, female: null, priority: 0 },
+  APPEARANCE_BELOW_AVG:{ male: null, female: null, priority: 0 },
 };
 
-// ── HEIGHT/BODY: 인증 시에만 사용 ──
+// ── 3. 키/체형/차/미인대회 키워드 ──
 const HT_WORD = {
   HEIGHT_OVER_180:           { male: "훤칠한 키",   female: null },
   HEIGHT_OVER_175:           { male: "좋은 체격",   female: null },
   HEIGHT_OVER_165_175_UNDER: { male: null,          female: "늘씬한 라인" },
 };
 
-// ── BODY: weight+height → BMI 계산 → 체형 판정 ──
-// BMI = weight / (height_m)^2
-// 남: 18.5~25 정상, 여: 18.5~23 정상
-// 근육질(운동체형)은 BMI 높아도 정상 처리
 const BODY_CHARM = {
-  fit_high:  { male: "탄탄한 체격",  female: "건강미 넘치는 바디" },  // BMI정상 + 운동체형
-  fit:       { male: "좋은 체격",    female: "날씬한 라인" },          // BMI정상
-  // BMI 비정상이면 문구 미반영
+  fit_high: { male: "탄탄한 체격",  female: "건강미 넘치는 바디" },
+  fit:      { male: "좋은 체격",    female: "날씬한 라인" },
 };
 
-function calcBodyTier(weight, heightCm, gender, isMuscular) {
-  if (!weight || !heightCm) return null;
-  const heightM = heightCm / 100;
-  const bmi = weight / (heightM * heightM);
-  const maxNormal = gender === "male" ? 25 : 23;
-  
-  // 근육질이면 BMI 상한을 30까지 허용 (보디빌더급 고려)
-  const effectiveMax = isMuscular ? 30 : maxNormal;
-  
-  if (bmi >= 18.5 && bmi <= effectiveMax) {
-    return isMuscular ? "fit_high" : "fit";
-  }
-  // 여성인데 BMI 18.5 미만 (저체중) → 날씬함은 매력이 될 수 있음
-  if (gender === "female" && bmi >= 16 && bmi < 18.5) {
-    return "fit";
-  }
-  return null; // BMI 비정상 → 문구 미반영
-}
-
-// ── CONTEST: 미인대회/피트니스대회 수상 ──
-const CONTEST_CHARM = {
-  male: "피트니스대회 수상 경력의",
-  female: "미인대회 수상 경력의",
-};
-
-// ── CAR: 인증 시에만 / 럭셔리만 의미 있음 ──
 const CAR_CHARM = {
   luxury:  { male: "여유로운 라이프", female: "여유로운 라이프" },
   premium: { male: "세련된 라이프",  female: "세련된 라이프" },
@@ -101,8 +68,105 @@ const CAR_CHARM = {
 const LUXURY_CARS = ["porsche","lamborghini","ferrari","maserati","bentley","rolls_royce"];
 const PREMIUM_CARS = ["mercedes_benz","bmw","audi","lexus","genesis","tesla","land_rover","jaguar","volvo"];
 
-// ── OCCUPATION: 직업 표시명 ──
-const OCC = {
+const CONTEST_CHARM = { male: "피트니스대회 수상 경력의", female: "미인대회 수상 경력의" };
+
+// ── 4. 통합 점수 매핑 (기술명세서 2.1절) ──
+
+// 학력 통합 점수
+const EDU_SCORE = {
+  DOMESTIC_TOP_5_WORLD_50: 10,  // SKY
+  DOMESTIC_TOP_8_WORLD_100: 9,  // 성균관/한양
+  DOMESTIC_TOP_20: 7,
+  DOMESTIC_TOP_50_OVERSEAS: 5,
+};
+
+// 학력 → 타이틀 컨텍스트
+const UNI_NAMES = { seoul:"서울대", yonsei:"연세대", korea:"고려대", skku:"성균관대", hanyang:"한양대" };
+const EDU_CONTEXT = {
+  DOMESTIC_TOP_5_WORLD_50: "명문대 출신",
+  DOMESTIC_TOP_8_WORLD_100: "명문대 출신",
+  DOMESTIC_TOP_20: "주요 대학 출신",
+};
+
+// 직업 통합 점수
+const OCC_TIER_SCORE = {
+  TOP_ELITE: 10,           // 판사, 검사, 상장사대표, 정치인
+  HIGH_ELITE_G5: 9,        // 성형외과, 피부과, 100억 사업가
+  SPECIAL_PROFESSION: 8,   // 의사, 변호사, 교수, 회계사
+  MAJOR_CORP_PUBLIC: 6,    // 대기업, 공기업, 교사, 장교
+  GENERAL_STABLE: 4,       // 중견, 공무원, 간호사
+  SMALL_MID_SELF: 2,       // 중소, 프리랜서, 사업가
+  OTHERS_LOW: 1,           // 알바, 무직, 취준
+};
+
+// occupation → tier 매핑 (등급 매핑 테이블 기반)
+const OCC_TIERS = {
+  judge:"TOP_ELITE", prosecutor:"TOP_ELITE", entrepreneur_listed:"TOP_ELITE", politician:"TOP_ELITE",
+  plastic_surgeon:"HIGH_ELITE_G5", dermatologist:"HIGH_ELITE_G5", entrepreneur_10B_over:"HIGH_ELITE_G5", professor_major:"HIGH_ELITE_G5",
+  doctor:"SPECIAL_PROFESSION", dentist:"SPECIAL_PROFESSION", pharmacist:"SPECIAL_PROFESSION", oriental_medicine_doctor:"SPECIAL_PROFESSION",
+  veterinarian:"SPECIAL_PROFESSION", lawyer:"SPECIAL_PROFESSION", accountant:"SPECIAL_PROFESSION", patent_attorney:"SPECIAL_PROFESSION",
+  professor:"SPECIAL_PROFESSION", entrepreneur_2B_over:"SPECIAL_PROFESSION", captain:"SPECIAL_PROFESSION",
+  foreign_service_exam_passed:"SPECIAL_PROFESSION", administrative_exam_passed_grade5:"SPECIAL_PROFESSION", grade5_civil_servant:"SPECIAL_PROFESSION",
+  domestic_large_corporation:"MAJOR_CORP_PUBLIC", public_enterprise:"MAJOR_CORP_PUBLIC", foreign_company:"MAJOR_CORP_PUBLIC",
+  elementary_middle_high_school_teacher:"MAJOR_CORP_PUBLIC", school_staff:"MAJOR_CORP_PUBLIC", health_teacher:"MAJOR_CORP_PUBLIC",
+  officer:"MAJOR_CORP_PUBLIC", grade6_civil_servant:"MAJOR_CORP_PUBLIC", announcer:"MAJOR_CORP_PUBLIC", journalist:"MAJOR_CORP_PUBLIC",
+  PD:"MAJOR_CORP_PUBLIC", bank:"MAJOR_CORP_PUBLIC", securities:"MAJOR_CORP_PUBLIC", investment:"MAJOR_CORP_PUBLIC",
+  fund_manager:"MAJOR_CORP_PUBLIC", analyst:"MAJOR_CORP_PUBLIC", asset_management:"MAJOR_CORP_PUBLIC",
+  IT:"MAJOR_CORP_PUBLIC", bio:"MAJOR_CORP_PUBLIC", researcher:"MAJOR_CORP_PUBLIC", appraiser:"MAJOR_CORP_PUBLIC", pilot:"MAJOR_CORP_PUBLIC",
+  domestic_mid_corporation:"GENERAL_STABLE", grade7_civil_servant:"GENERAL_STABLE", grade9_civil_servant:"GENERAL_STABLE",
+  technical_civil_servant:"GENERAL_STABLE", police_officer:"GENERAL_STABLE", firefighter:"GENERAL_STABLE",
+  nurse:"GENERAL_STABLE", tax_accountant:"GENERAL_STABLE", labor_attorney:"GENERAL_STABLE", architect:"GENERAL_STABLE",
+  law_firm_staff:"GENERAL_STABLE", insurance:"GENERAL_STABLE", financial_consultant:"GENERAL_STABLE",
+  aviation:"GENERAL_STABLE", academy_instructor:"GENERAL_STABLE", designer:"GENERAL_STABLE", actor:"GENERAL_STABLE",
+  singer:"GENERAL_STABLE", musician:"GENERAL_STABLE", data_engineer:"GENERAL_STABLE", ai_engineer:"GENERAL_STABLE",
+  domestic_small_corporation:"SMALL_MID_SELF", entrepreneur:"SMALL_MID_SELF", freelancer:"SMALL_MID_SELF",
+  programmer:"SMALL_MID_SELF", web_developer:"SMALL_MID_SELF", app_developer:"SMALL_MID_SELF",
+  fitness_trainer:"SMALL_MID_SELF", pilates:"SMALL_MID_SELF", yoga:"SMALL_MID_SELF", athlete:"SMALL_MID_SELF",
+  beauty:"SMALL_MID_SELF", photographer:"SMALL_MID_SELF", dancer:"SMALL_MID_SELF",
+  kindergarten_teacher:"SMALL_MID_SELF", childcare_teacher:"SMALL_MID_SELF",
+  part_time:"OTHERS_LOW", job_seeker:"OTHERS_LOW", homemaker:"OTHERS_LOW", unemployed:"OTHERS_LOW",
+};
+
+// 연봉 통합 점수 + 매력 키워드 + 한글 라벨
+const SALARY_MAP = {
+  SALARY_OVER_200M:  { score: 10, charm: "탄탄한 경제력",     titleBoost: "능력 있는", label: "2억원 이상" },
+  SALARY_150M_200M:  { score: 8,  charm: "안정적인 경제력",   titleBoost: null,        label: "1억 5천만원 ~ 2억원" },
+  SALARY_100M_150M:  { score: 6,  charm: "탄탄한 커리어",     titleBoost: null,        label: "1억원 ~ 1억 5천만원" },
+  SALARY_70M_100M:   { score: 4,  charm: "안정적인 커리어",   titleBoost: null,        label: "7천만원 ~ 1억원" },
+  SALARY_50M_70M:    { score: 2,  charm: "성실한 커리어",     titleBoost: null,        label: "5천만원 ~ 7천만원" },
+  SALARY_30M_50M:    { score: 1,  charm: "꾸준한 성장세",     titleBoost: null,        label: "3천만원 ~ 5천만원" },
+  SALARY_UNDER_30M:  { score: 0,  charm: null,                titleBoost: null,        label: "3천만원 미만" },
+};
+
+// 본인 자산 통합 점수 + 매력 키워드 (전체 7단계) + 한글 라벨
+const ASSET_MAP = {
+  ASSET_OVER_1B:    { score: 10, charm: "자수성가의 저력",   label: "순자산 10억원 이상" },
+  ASSET_500M_1B:    { score: 8,  charm: "탄탄한 자산 기반",  label: "순자산 5억원 ~ 10억원" },
+  ASSET_300M_500M:  { score: 6,  charm: "안정적인 자산",     label: "순자산 3억원 ~ 5억원" },
+  ASSET_100M_300M:  { score: 4,  charm: "건실한 자산 관리",  label: "순자산 1억원 ~ 3억원" },
+  ASSET_50M_100M:   { score: 2,  charm: null,                label: "순자산 5천만원 ~ 1억원" },
+  ASSET_10M_50M:    { score: 1,  charm: null,                label: "순자산 1천만원 ~ 5천만원" },
+  ASSET_UNDER_10M:  { score: 0,  charm: null,                label: "순자산 1천만원 미만" },
+};
+
+// 부모자산 (옵션 인증)
+const PARENT_TAG = {
+  PARENT_ASSET_OVER_100B: "든든한 집안의",
+  PARENT_ASSET_OVER_50B: "여유로운 집안의",
+  PARENT_ASSET_OVER_30B: "안정적 가정의",
+  PARENT_ASSET_OVER_10B: null, // 문구 미반영
+};
+
+// 직장 카테고리
+const COMP_CATEGORY = {
+  large:"대기업", major_public:"주요 공기업", major_finance:"주요 금융권",
+  major_media:"주요 언론사", education:"교육기관", government:"정부기관",
+  other_public:"공공기관", national_research:"국공립 연구소", medium:"중견기업",
+  company_other: null,
+};
+
+// ── 5. 직업 표시명 ──
+const OCC_NAME = {
   doctor:"의사", plastic_surgeon:"성형외과 전문의", dermatologist:"피부과 전문의",
   dentist:"치과의사", pharmacist:"약사", oriental_medicine_doctor:"한의사",
   veterinarian:"수의사", nurse:"간호사", dental_hygienist:"치위생사",
@@ -139,40 +203,23 @@ const OCC = {
   programmer:"개발자", web_developer:"웹 개발자", app_developer:"앱 개발자",
   data_engineer:"데이터 엔지니어", ai_engineer:"AI 엔지니어",
   security_specialist:"보안 전문가",
+  part_time:"아르바이트", job_seeker:"취업준비생", homemaker:"주부", unemployed:"회원",
 };
-const OCC_F = { securities:"증권 전문가", IT:"IT 전문가", data_engineer:"데이터 전문가", ai_engineer:"AI 전문가", aerospace:"항공우주 전문가" };
+const OCC_NAME_F = { securities:"증권 전문가", IT:"IT 전문가", data_engineer:"데이터 전문가", ai_engineer:"AI 전문가", aerospace:"항공우주 전문가" };
 
-// ── COMPANY: 카테고리만 (이름 비공개) ──
-const COMP_CATEGORY = {
-  large: "대기업 재직",
-  major_public: "주요 공기업 재직",
-  major_finance: "주요 금융권 재직",
-  major_media: "주요 언론사 재직",
-  education: "교육기관 재직",
-  government: "정부기관 재직",
-  other_public: "공공기관 재직",
-  national_research: "국공립 연구소 재직",
-  medium: "중견기업 재직",
-  company_other: null,
-};
+// ── 6. BMI 계산 ──
+function calcBodyTier(weight, heightCm, gender, muscular) {
+  if (!weight || !heightCm) return null;
+  const bmi = weight / Math.pow(heightCm / 100, 2);
+  const max = muscular ? 30 : (gender === "male" ? 25 : 23);
+  if (bmi >= 18.5 && bmi <= max) return muscular ? "fit_high" : "fit";
+  if (gender === "female" && bmi >= 16 && bmi < 18.5) return "fit";
+  return null;
+}
 
-const UNI = { seoul:"서울대", yonsei:"연세대", korea:"고려대", skku:"성균관대", hanyang:"한양대" };
-const EDU_TAG = {
-  DOMESTIC_TOP_5_WORLD_50: "명문대 출신",
-  DOMESTIC_TOP_8_WORLD_100: "명문대 출신",
-  DOMESTIC_TOP_20: "주요 대학 출신",
-};
-
-// 부모 자산 (인증 시에만)
-const PARENT_TAG = {
-  PARENT_ASSET_OVER_100B: "든든한 집안",
-  PARENT_ASSET_OVER_50B: "여유로운 집안",
-  PARENT_ASSET_OVER_30B: "안정적 가정",
-};
-
-// ── 한국어 조사 ──
-function hasBatchim(str) {
-  const c = str.charAt(str.length - 1).charCodeAt(0);
+// ── 7. 한국어 조사 ──
+function hasBatchim(s) {
+  const c = s.charAt(s.length - 1).charCodeAt(0);
   return c >= 0xAC00 && c <= 0xD7A3 && (c - 0xAC00) % 28 !== 0;
 }
 function waGwa(s) { return hasBatchim(s) ? "과" : "와"; }
@@ -180,82 +227,105 @@ function eulReul(s) { return hasBatchim(s) ? "을" : "를"; }
 function attachOf(s) { return s.endsWith("의") ? s : s + "의"; }
 function stripOf(s) { return s.replace(/의$/, ""); }
 
-// ── 문구 생성 ──
+// ════════════════════════════════════════════
+// 문구 생성 함수 (기술명세서 전체 반영)
+// ════════════════════════════════════════════
 function generate(p) {
   const g = p.gender;
+  const occName = (g === "female" && OCC_NAME_F[p.occupation]) || OCC_NAME[p.occupation] || "회원";
 
-  // 1) 타이틀 조립
-  const occName = (g === "female" && OCC_F[p.occupation]) || OCC[p.occupation] || "";
+  // ── STEP 1: 스펙 교차 비교 → 타이틀 결정 ──
+  const eduScore = EDU_SCORE[p.education] || 0;
+  const occTier = OCC_TIERS[p.occupation] || "OTHERS_LOW";
+  const occScore = OCC_TIER_SCORE[occTier] || 1;
+  const salaryData = SALARY_MAP[p.salary] || { score: 0 };
+  const assetData = ASSET_MAP[p.assets] || { score: 0 };
 
-  // 직장: 카테고리만 (이름 비노출)
+  // 학력 컨텍스트
+  let eduCtx = "";
+  if (p.university && UNI_NAMES[p.university]) eduCtx = UNI_NAMES[p.university] + " 출신";
+  else if (p.education && EDU_CONTEXT[p.education]) eduCtx = EDU_CONTEXT[p.education];
+
+  // 직장 카테고리
   const compCat = p.companyCategory ? COMP_CATEGORY[p.companyCategory] : null;
 
-  // 학력
-  let eduTag = "";
-  if (p.university && UNI[p.university]) eduTag = UNI[p.university] + " 출신";
-  else if (p.education && EDU_TAG[p.education]) eduTag = EDU_TAG[p.education];
-
-  // 부모 자산 (인증 시에만)
-  let famTag = "";
+  // 부모자산 (옵션)
+  let famCtx = "";
   if (p.v_parentAssets && p.parentAssets && PARENT_TAG[p.parentAssets])
-    famTag = PARENT_TAG[p.parentAssets];
+    famCtx = PARENT_TAG[p.parentAssets];
 
-  // 타이틀 = [컨텍스트] + [직업]
-  let title = "";
-  if (compCat && occName) {
-    // "대기업 재직 개발자", but if occupation already says "대기업 직장인" → "대기업 재직 직장인" is redundant
-    if (["대기업 직장인","중견기업 직장인","공기업 직장인","외국계 직장인","직장인"].includes(occName)) {
-      title = compCat.replace(" 재직", "") + " 직장인";
-    } else {
-      title = occName; // 전문직이면 직업명이 충분
+  // 교차 비교: 4개 카테고리 중 최고 선택
+  const scores = [
+    { cat: "edu", score: eduScore },
+    { cat: "occ", score: occScore },
+    { cat: "salary", score: salaryData.score },
+    { cat: "asset", score: assetData.score },
+  ].sort((a, b) => b.score - a.score);
+
+  const winner = scores[0];
+
+  // 타이틀 조립
+  let title = occName;
+
+  // 직업 점수 8+ (SPECIAL_PROFESSION 이상)이면 직업명만으로 충분
+  // 단, SKY(10점)이면 예외적으로 학력도 표시
+  if (occScore >= 8) {
+    if (eduScore >= 10 && eduCtx) {
+      title = `${eduCtx} ${occName}`;
     }
-  } else if (eduTag) {
-    title = `${eduTag} ${occName}`;
-  } else if (famTag) {
-    title = `${famTag}의 ${occName}`;
-  } else if (p.salary === "SALARY_OVER_200M") {
-    title = `능력 있는 ${occName}`;
-  } else {
-    title = occName;
+    // else: 직업명만
+  } else if (winner.cat === "edu" && eduCtx) {
+    title = `${eduCtx} ${occName}`;
+  } else if (winner.cat === "salary" && salaryData.titleBoost) {
+    title = `${salaryData.titleBoost} ${occName}`;
+  } else if (compCat) {
+    // 직업이 "~직장인"이면 카테고리로 대체
+    if (occName.includes("직장인")) {
+      title = `${compCat} 직장인`;
+    }
+    // 전문직은 직업명으로 충분
+  } else if (famCtx) {
+    title = `${famCtx} ${occName}`;
   }
 
-  // 2) 매력 후보 수집
+  // ── STEP 2: 매력 후보 수집 ──
   let candidates = [];
-  const physicalTypes = ["height","body","appearance","car","contest"];
+  const physTypes = ["appearance","height","body","car","contest","salary","asset"];
 
-  // 외모 (항상 있음 — 코디네이터 평가)
-  const appTier = { APPEARANCE_TOP_1:10, APPEARANCE_TOP_5:8, APPEARANCE_TOP_20:5, APPEARANCE_HIGH_AVG:3, APPEARANCE_ABOVE_AVG:1 };
-  const appW = APP_WORD[p.appearance]?.[g];
-  if (appW) candidates.push({ text: appW, priority: appTier[p.appearance]||0, type:"appearance" });
+  // 외모
+  const appData = APP_WORD[p.appearance];
+  if (appData?.[g]) candidates.push({ text: appData[g], priority: appData.priority, type: "appearance" });
 
-  // 키 (인증 시에만)
-  if (p.v_height) {
-    const htW = HT_WORD[p.height]?.[g];
-    if (htW) candidates.push({ text: htW, priority: 6, type:"height" });
-  }
+  // 키 (옵션)
+  if (p.v_height && p.height && HT_WORD[p.height]?.[g])
+    candidates.push({ text: HT_WORD[p.height][g], priority: 6, type: "height" });
 
-  // 체형 (인증 시에만 — weight+height → BMI 계산)
+  // 체형 (옵션)
   if (p.v_body && p.weight && p.heightCm) {
-    const bodyTier = calcBodyTier(p.weight, p.heightCm, g, !!p.muscular);
-    if (bodyTier && BODY_CHARM[bodyTier]?.[g]) {
-      const priority = bodyTier === "fit_high" ? 5 : 4;
-      candidates.push({ text: BODY_CHARM[bodyTier][g], priority, type:"body" });
-    }
+    const bt = calcBodyTier(p.weight, p.heightCm, g, !!p.muscular);
+    if (bt && BODY_CHARM[bt]?.[g])
+      candidates.push({ text: BODY_CHARM[bt][g], priority: bt === "fit_high" ? 5 : 4, type: "body" });
   }
 
-  // 미인대회/피트니스대회 수상 (인증 시에만)
-  if (p.v_contest) {
-    candidates.push({ text: CONTEST_CHARM[g], priority: 9, type:"contest" });
-  }
+  // 미인대회 (옵션)
+  if (p.v_contest)
+    candidates.push({ text: CONTEST_CHARM[g], priority: 9, type: "contest" });
 
-  // 차 (인증 시에만 + 프리미엄급만)
+  // 차 (옵션)
   if (p.v_car && p.carBrand) {
-    if (LUXURY_CARS.includes(p.carBrand)) {
-      candidates.push({ text: CAR_CHARM.luxury[g], priority: 5, type:"car" });
-    } else if (PREMIUM_CARS.includes(p.carBrand) && p.carPrice >= 8000) {
-      candidates.push({ text: CAR_CHARM.premium[g], priority: 3, type:"car" });
-    }
+    if (LUXURY_CARS.includes(p.carBrand))
+      candidates.push({ text: CAR_CHARM.luxury[g], priority: 5, type: "car" });
+    else if (PREMIUM_CARS.includes(p.carBrand) && p.carPrice >= 8000)
+      candidates.push({ text: CAR_CHARM.premium[g], priority: 3, type: "car" });
   }
+
+  // 연봉 매력 키워드 (타이틀에 이미 반영 안 된 경우만)
+  if (salaryData.charm && winner.cat !== "salary")
+    candidates.push({ text: salaryData.charm, priority: Math.min(salaryData.score / 2, 5), type: "salary" });
+
+  // 자산 매력 키워드
+  if (assetData.charm && winner.cat !== "asset")
+    candidates.push({ text: assetData.charm, priority: Math.min(assetData.score / 2, 5), type: "asset" });
 
   // 성향 (항상)
   const pos = Object.entries(p.traits)
@@ -264,50 +334,50 @@ function generate(p) {
   const all = Object.entries(p.traits).sort((a,b) => b[1] - a[1]);
   const t1 = pos[0]?.[0], t2 = pos[1]?.[0];
 
-  let traitText = "";
+  let traitFull = "";
   let traitShort = TRAIT_CHARM[t1]?.[g] || "";
   const ck1 = `${t1}+${t2}`, ck2 = `${t2}+${t1}`;
-  if (COMBO_CHARM[ck1]?.[g]) traitText = COMBO_CHARM[ck1][g];
-  else if (COMBO_CHARM[ck2]?.[g]) traitText = COMBO_CHARM[ck2][g];
-  else traitText = traitShort;
+  if (COMBO_CHARM[ck1]?.[g]) traitFull = COMBO_CHARM[ck1][g];
+  else if (COMBO_CHARM[ck2]?.[g]) traitFull = COMBO_CHARM[ck2][g];
+  else traitFull = traitShort;
 
   if (all[0]?.[0] === "애착불안" && all[0][1] > (pos[0]?.[1]||0) + 1) {
-    traitText = TRAIT_CHARM["애착불안"][g]; traitShort = traitText;
+    traitFull = TRAIT_CHARM["애착불안"][g]; traitShort = traitFull;
   }
   if (all[0]?.[0] === "애착회피" && all[0][1] > (pos[0]?.[1]||0) + 1) {
-    traitText = TRAIT_CHARM["애착회피"][g]; traitShort = traitText;
+    traitFull = TRAIT_CHARM["애착회피"][g]; traitShort = traitFull;
   }
 
-  if (traitText) candidates.push({ text: traitText, short: traitShort, priority: 7, type:"trait" });
+  if (traitFull) candidates.push({ text: traitFull, short: traitShort, priority: 7, type: "trait" });
 
-  // 3) 우선순위 선택 (최대 2개, 물리적 특성 1개+성향 1개)
+  // ── STEP 3: 후보 선택 (최대 2개: 물리 1 + 성향 1) ──
   candidates.sort((a,b) => b.priority - a.priority);
   let selected = [];
-  let hasPhysical = false, hasTrait = false;
+  let hasPhys = false, hasTrait = false;
   for (const c of candidates) {
     if (selected.length >= 2) break;
-    const isPhys = physicalTypes.includes(c.type);
-    if (isPhys && hasPhysical) continue;
+    const isPhys = physTypes.includes(c.type);
+    if (isPhys && hasPhys) continue;
     if (c.type === "trait" && hasTrait) continue;
     selected.push(c);
-    if (isPhys) hasPhysical = true;
+    if (isPhys) hasPhys = true;
     if (c.type === "trait") hasTrait = true;
   }
 
-  // 4) 조합
+  // ── STEP 4: 조합 ──
   let tagline = "";
   if (selected.length === 0) {
     tagline = title;
   } else if (selected.length === 1) {
     tagline = attachOf(selected[0].text) + " " + title;
   } else {
-    const phys = selected.find(s => physicalTypes.includes(s.type));
+    const phys = selected.find(s => physTypes.includes(s.type));
     const trait = selected.find(s => s.type === "trait");
     if (phys && trait) {
       const a = stripOf(phys.text);
       const b = stripOf(trait.short || trait.text);
-      const overlapW = ["매력","비주얼","외모","미모","이미지","분위기","라인","체격","인상","취향","감각"];
-      if (overlapW.some(w => a.includes(w) && b.includes(w))) {
+      const overlap = ["매력","비주얼","외모","미모","이미지","분위기","라인","체격","인상","취향","감각"];
+      if (overlap.some(w => a.includes(w) && b.includes(w))) {
         tagline = attachOf(selected[0].text) + " " + title;
       } else {
         tagline = `${a}${waGwa(a)} ${b}${eulReul(b)} 갖춘 ${title}`;
@@ -319,13 +389,19 @@ function generate(p) {
 
   tagline = tagline.replace(/의\s+의/g, "의").replace(/\s+/g, " ").trim();
 
-  // 인증 뱃지 수 (UI 표시용)
-  const verifiedCount = [p.v_height, p.v_body, p.v_car, p.v_parentAssets, p.v_contest].filter(Boolean).length;
+  const vCount = [p.v_height, p.v_body, p.v_car, p.v_parentAssets, p.v_contest].filter(Boolean).length;
 
-  return { tagline, selected: selected.map(s => `${s.type}: ${s.text}`), title, traitText, t1, t2, verifiedCount };
+  return {
+    tagline, title, traitText: traitFull, t1, t2, vCount,
+    selected: selected.map(s => `${s.type}(${s.priority}): ${s.text}`),
+    scores: scores.map(s => `${s.cat}:${s.score}`).join(" / "),
+    winner: `${winner.cat}(${winner.score})`,
+  };
 }
 
-// ── UI DATA ──
+// ════════════════════════════════════════════
+// UI
+// ════════════════════════════════════════════
 const LABELS = ["개방성","성실성","외향성","우호성","정서안정","애착안정","애착불안","애착회피"];
 const OCC_GROUPS = [
   { label:"의료", o:[["doctor","의사"],["plastic_surgeon","성형외과"],["dermatologist","피부과"],["dentist","치과의사"],["pharmacist","약사"],["oriental_medicine_doctor","한의사"],["veterinarian","수의사"],["nurse","간호사"],["dental_hygienist","치위생사"],["physical_therapist","물리치료사"],["health_teacher","보건교사"]]},
@@ -334,7 +410,7 @@ const OCC_GROUPS = [
   { label:"전문직", o:[["accountant","회계사"],["tax_accountant","세무사"],["patent_attorney","변리사"],["labor_attorney","노무사"],["architect","건축사"],["appraiser","감정평가사"],["captain","기장"]]},
   { label:"공무원·군인", o:[["foreign_service_exam_passed","외교관"],["administrative_exam_passed_grade5","행시출신"],["grade5_civil_servant","5급+"],["grade6_civil_servant","6급"],["grade7_civil_servant","7급"],["grade9_civil_servant","9급"],["technical_civil_servant","기술직"],["officer","장교"],["police_officer","경찰"],["firefighter","소방관"]]},
   { label:"금융", o:[["bank","은행"],["securities","증권"],["investment","투자"],["fund_manager","펀드매니저"],["analyst","애널리스트"],["asset_management","자산운용"]]},
-  { label:"일반", o:[["domestic_large_corporation","대기업"],["domestic_mid_corporation","중견"],["domestic_small_corporation","중소"],["public_enterprise","공기업"],["foreign_company","외국계"],["entrepreneur_listed","상장사대표"],["entrepreneur_10B_over","CEO(100억+)"],["entrepreneur_2B_over","사업가(20억+)"],["entrepreneur","사업가"],["freelancer","프리랜서"]]},
+  { label:"일반", o:[["domestic_large_corporation","대기업"],["domestic_mid_corporation","중견"],["domestic_small_corporation","중소"],["public_enterprise","공기업"],["foreign_company","외국계"],["entrepreneur_listed","상장사대표"],["entrepreneur_10B_over","CEO(100억+)"],["entrepreneur_2B_over","사업가(20억+)"],["entrepreneur","사업가"],["freelancer","프리랜서"],["job_seeker","취준생"],["part_time","알바"],["homemaker","주부"],["unemployed","무직"]]},
   { label:"IT·개발", o:[["programmer","개발자"],["web_developer","웹"],["app_developer","앱"],["data_engineer","데이터"],["ai_engineer","AI"],["security_specialist","보안"]]},
   { label:"연구·기술", o:[["IT","IT"],["bio","바이오"],["researcher","연구원"],["aerospace","항공우주"]]},
   { label:"방송", o:[["announcer","아나운서"],["journalist","기자"],["PD","PD"]]},
@@ -342,34 +418,37 @@ const OCC_GROUPS = [
   { label:"예술", o:[["actor","배우"],["singer","가수"],["designer","디자이너"],["musician","뮤지션"],["dancer","무용가"]]},
   { label:"서비스", o:[["aviation","승무원"],["beauty","뷰티"],["pilot","파일럿"]]},
 ];
-const COMP_CAT_OPTS = [["","선택안함"],["large","대기업"],["major_finance","주요 금융권"],["major_public","주요 공기업"],["other_public","기타 공공기관"],["major_media","주요 언론사"],["education","교육기관"],["government","정부기관"],["national_research","국공립 연구소"],["medium","중견기업"]];
+const COMP_OPTS = [["","선택안함"],["large","대기업"],["major_finance","주요금융권"],["major_public","주요공기업"],["other_public","기타공공기관"],["major_media","주요언론사"],["education","교육기관"],["government","정부기관"],["national_research","국공립연구소"],["medium","중견기업"]];
 const UNI_OPTS = [["","선택안함"],["seoul","서울대"],["yonsei","연세대"],["korea","고려대"],["skku","성균관대"],["hanyang","한양대"]];
-const CAR_OPTS = [["","미인증"],["porsche","포르쉐"],["lamborghini","람보르기니"],["ferrari","페라리"],["bentley","벤틀리"],["rolls_royce","롤스로이스"],["maserati","마세라티"],["mercedes_benz","벤츠"],["bmw","BMW"],["audi","아우디"],["lexus","렉서스"],["genesis","제네시스"],["tesla","테슬라"],["land_rover","랜드로버"],["volvo","볼보"],["hyundai","현대"],["kia","기아"],["chevrolet","쉐보레"],["other","기타"]];
+const CAR_OPTS = [["","미인증"],["porsche","포르쉐"],["lamborghini","람보르기니"],["ferrari","페라리"],["bentley","벤틀리"],["rolls_royce","롤스로이스"],["maserati","마세라티"],["mercedes_benz","벤츠"],["bmw","BMW"],["audi","아우디"],["lexus","렉서스"],["genesis","제네시스"],["tesla","테슬라"],["land_rover","랜드로버"],["volvo","볼보"],["hyundai","현대"],["kia","기아"]];
+
+const P0 = { gender:"male", traits:{개방성:3,성실성:3,외향성:3,우호성:3,정서안정:3,애착안정:3,애착불안:1,애착회피:1},
+  appearance:"APPEARANCE_AVG", v_height:false, height:"", v_body:false, weight:0, heightCm:0, muscular:false,
+  occupation:"grade9_civil_servant", companyCategory:"government", education:"", university:"",
+  salary:"SALARY_30M_50M", assets:"ASSET_UNDER_10M", v_parentAssets:false, parentAssets:"", v_car:false, carBrand:"", carPrice:0, v_contest:false };
 
 const PRESETS = [
-  { name:"남·SKY 치과의사", p:{ gender:"male", traits:{개방성:2,성실성:4,외향성:1,우호성:5,정서안정:3,애착안정:4,애착불안:0,애착회피:1}, appearance:"APPEARANCE_TOP_20", v_height:true, height:"HEIGHT_OVER_180", v_body:true, weight:78, heightCm:182, muscular:true, occupation:"dentist", companyCategory:"", education:"DOMESTIC_TOP_5_WORLD_50", university:"yonsei", salary:"SALARY_100M_150M", assets:"", v_parentAssets:false, parentAssets:"", v_car:false, carBrand:"", carPrice:0, v_contest:false }},
-  { name:"여·대기업(인증多)", p:{ gender:"female", traits:{개방성:5,성실성:3,외향성:4,우호성:2,정서안정:3,애착안정:3,애착불안:1,애착회피:0}, appearance:"APPEARANCE_TOP_5", v_height:true, height:"HEIGHT_OVER_165_175_UNDER", v_body:true, weight:50, heightCm:167, muscular:false, occupation:"domestic_large_corporation", companyCategory:"large", education:"DOMESTIC_TOP_8_WORLD_100", university:"", salary:"SALARY_70M_100M", assets:"", v_parentAssets:true, parentAssets:"PARENT_ASSET_OVER_50B", v_car:false, carBrand:"", carPrice:0, v_contest:false }},
-  { name:"남·서울대 CEO", p:{ gender:"male", traits:{개방성:5,성실성:3,외향성:4,우호성:3,정서안정:4,애착안정:2,애착불안:0,애착회피:3}, appearance:"APPEARANCE_HIGH_AVG", v_height:true, height:"HEIGHT_OVER_180", v_body:false, weight:0, heightCm:0, muscular:false, occupation:"entrepreneur_10B_over", companyCategory:"", education:"DOMESTIC_TOP_5_WORLD_50", university:"seoul", salary:"SALARY_OVER_200M", assets:"ASSET_OVER_1B", v_parentAssets:false, parentAssets:"", v_car:true, carBrand:"porsche", carPrice:11000, v_contest:false }},
-  { name:"여·미인대회 수상", p:{ gender:"female", traits:{개방성:4,성실성:2,외향성:4,우호성:4,정서안정:3,애착안정:3,애착불안:1,애착회피:0}, appearance:"APPEARANCE_TOP_1", v_height:true, height:"HEIGHT_OVER_165_175_UNDER", v_body:true, weight:48, heightCm:170, muscular:false, occupation:"pilates", companyCategory:"", education:"", university:"", salary:"", assets:"", v_parentAssets:false, parentAssets:"", v_car:false, carBrand:"", carPrice:0, v_contest:true }},
-  { name:"남·소방관(인증多)", p:{ gender:"male", traits:{개방성:1,성실성:5,외향성:2,우호성:4,정서안정:5,애착안정:3,애착불안:0,애착회피:1}, appearance:"APPEARANCE_ABOVE_AVG", v_height:true, height:"HEIGHT_OVER_180", v_body:true, weight:85, heightCm:183, muscular:true, occupation:"firefighter", companyCategory:"", education:"", university:"", salary:"SALARY_50M_70M", assets:"", v_parentAssets:false, parentAssets:"", v_car:false, carBrand:"", carPrice:0, v_contest:false }},
-  { name:"여·유치원교사(미인증)", p:{ gender:"female", traits:{개방성:3,성실성:3,외향성:3,우호성:5,정서안정:4,애착안정:5,애착불안:1,애착회피:0}, appearance:"APPEARANCE_HIGH_AVG", v_height:false, height:"", v_body:false, weight:0, heightCm:0, muscular:false, occupation:"kindergarten_teacher", companyCategory:"", education:"", university:"", salary:"", assets:"", v_parentAssets:false, parentAssets:"", v_car:false, carBrand:"", carPrice:0, v_contest:false }},
-  { name:"남·재벌2세(풀인증)", p:{ gender:"male", traits:{개방성:3,성실성:2,외향성:3,우호성:3,정서안정:3,애착안정:2,애착불안:1,애착회피:2}, appearance:"APPEARANCE_TOP_20", v_height:true, height:"HEIGHT_OVER_175", v_body:true, weight:75, heightCm:178, muscular:false, occupation:"entrepreneur_listed", companyCategory:"", education:"DOMESTIC_TOP_5_WORLD_50", university:"korea", salary:"SALARY_OVER_200M", assets:"ASSET_OVER_1B", v_parentAssets:true, parentAssets:"PARENT_ASSET_OVER_100B", v_car:true, carBrand:"porsche", carPrice:11000, v_contest:false }},
-  { name:"여·승무원(키인증)", p:{ gender:"female", traits:{개방성:4,성실성:3,외향성:4,우호성:5,정서안정:3,애착안정:3,애착불안:2,애착회피:0}, appearance:"APPEARANCE_TOP_5", v_height:true, height:"HEIGHT_OVER_165_175_UNDER", v_body:false, weight:0, heightCm:0, muscular:false, occupation:"aviation", companyCategory:"", education:"DOMESTIC_TOP_20", university:"", salary:"", assets:"", v_parentAssets:false, parentAssets:"", v_car:false, carBrand:"", carPrice:0, v_contest:false }},
-  { name:"남·근육질 트레이너", p:{ gender:"male", traits:{개방성:2,성실성:4,외향성:4,우호성:3,정서안정:4,애착안정:3,애착불안:0,애착회피:1}, appearance:"APPEARANCE_TOP_5", v_height:true, height:"HEIGHT_OVER_180", v_body:true, weight:92, heightCm:181, muscular:true, occupation:"fitness_trainer", companyCategory:"", education:"", university:"", salary:"", assets:"", v_parentAssets:false, parentAssets:"", v_car:false, carBrand:"", carPrice:0, v_contest:false }},
-  { name:"남·9급(미인증)", p:{ gender:"male", traits:{개방성:2,성실성:4,외향성:3,우호성:4,정서안정:3,애착안정:4,애착불안:1,애착회피:0}, appearance:"APPEARANCE_AVG", v_height:false, height:"", v_body:false, weight:0, heightCm:0, muscular:false, occupation:"grade9_civil_servant", companyCategory:"government", education:"", university:"", salary:"SALARY_30M_50M", assets:"", v_parentAssets:false, parentAssets:"", v_car:false, carBrand:"", carPrice:0, v_contest:false }},
+  { name:"남·SKY 치과의사", p:{...P0, occupation:"dentist", companyCategory:"", education:"DOMESTIC_TOP_5_WORLD_50", university:"yonsei", appearance:"APPEARANCE_TOP_20", salary:"SALARY_100M_150M", assets:"ASSET_300M_500M", traits:{개방성:2,성실성:4,외향성:1,우호성:5,정서안정:3,애착안정:4,애착불안:0,애착회피:1}, v_height:true, height:"HEIGHT_OVER_180", v_body:true, weight:78, heightCm:182, muscular:true }},
+  { name:"여·대기업(인증多)", p:{...P0, gender:"female", occupation:"domestic_large_corporation", companyCategory:"large", education:"DOMESTIC_TOP_8_WORLD_100", appearance:"APPEARANCE_TOP_5", salary:"SALARY_70M_100M", assets:"ASSET_50M_100M", traits:{개방성:5,성실성:3,외향성:4,우호성:2,정서안정:3,애착안정:3,애착불안:1,애착회피:0}, v_height:true, height:"HEIGHT_OVER_165_175_UNDER", v_body:true, weight:50, heightCm:167, v_parentAssets:true, parentAssets:"PARENT_ASSET_OVER_50B" }},
+  { name:"남·9급+서울대+자산10억", p:{...P0, education:"DOMESTIC_TOP_5_WORLD_50", university:"seoul", salary:"SALARY_150M_200M", assets:"ASSET_OVER_1B", traits:{개방성:2,성실성:4,외향성:3,우호성:4,정서안정:3,애착안정:4,애착불안:1,애착회피:0} }},
+  { name:"여·미인대회 수상", p:{...P0, gender:"female", occupation:"pilates", companyCategory:"", education:"", appearance:"APPEARANCE_TOP_1", traits:{개방성:4,성실성:2,외향성:4,우호성:4,정서안정:3,애착안정:3,애착불안:1,애착회피:0}, v_height:true, height:"HEIGHT_OVER_165_175_UNDER", v_contest:true, salary:"", assets:"" }},
+  { name:"남·소방관(체형인증)", p:{...P0, occupation:"firefighter", companyCategory:"", appearance:"APPEARANCE_ABOVE_AVG", salary:"SALARY_50M_70M", assets:"ASSET_10M_50M", traits:{개방성:1,성실성:5,외향성:2,우호성:4,정서안정:5,애착안정:3,애착불안:0,애착회피:1}, v_height:true, height:"HEIGHT_OVER_180", v_body:true, weight:85, heightCm:183, muscular:true }},
+  { name:"여·유치원교사(미인증)", p:{...P0, gender:"female", occupation:"kindergarten_teacher", companyCategory:"", appearance:"APPEARANCE_HIGH_AVG", salary:"", assets:"", traits:{개방성:3,성실성:3,외향성:3,우호성:5,정서안정:4,애착안정:5,애착불안:1,애착회피:0} }},
+  { name:"남·프리랜서(자산5억)", p:{...P0, occupation:"freelancer", companyCategory:"", appearance:"APPEARANCE_AVG", salary:"SALARY_70M_100M", assets:"ASSET_500M_1B", traits:{개방성:4,성실성:3,외향성:3,우호성:3,정서안정:4,애착안정:3,애착불안:0,애착회피:2} }},
+  { name:"남·취준생(미인증)", p:{...P0, occupation:"job_seeker", companyCategory:"", appearance:"APPEARANCE_AVG", salary:"SALARY_UNDER_30M", assets:"ASSET_UNDER_10M", traits:{개방성:4,성실성:3,외향성:5,우호성:4,정서안정:2,애착안정:2,애착불안:2,애착회피:1} }},
+  { name:"남·재벌2세(풀인증)", p:{...P0, occupation:"entrepreneur_listed", education:"DOMESTIC_TOP_5_WORLD_50", university:"korea", appearance:"APPEARANCE_TOP_20", salary:"SALARY_OVER_200M", assets:"ASSET_OVER_1B", traits:{개방성:3,성실성:2,외향성:3,우호성:3,정서안정:3,애착안정:2,애착불안:1,애착회피:2}, v_height:true, height:"HEIGHT_OVER_175", v_body:true, weight:75, heightCm:178, v_parentAssets:true, parentAssets:"PARENT_ASSET_OVER_100B", v_car:true, carBrand:"porsche", carPrice:11000 }},
+  { name:"여·승무원(키인증)", p:{...P0, gender:"female", occupation:"aviation", education:"DOMESTIC_TOP_20", appearance:"APPEARANCE_TOP_5", salary:"SALARY_50M_70M", assets:"", traits:{개방성:4,성실성:3,외향성:4,우호성:5,정서안정:3,애착안정:3,애착불안:2,애착회피:0}, v_height:true, height:"HEIGHT_OVER_165_175_UNDER" }},
 ];
 
-function Sel({value,onChange,children,className=""}) {
+function Sel({value,onChange,children}) {
   return <select value={value} onChange={e=>onChange(e.target.value)}
-    className={`w-full text-xs border border-gray-200 rounded-lg p-1.5 bg-white focus:ring-1 focus:ring-purple-200 outline-none ${className}`}>{children}</select>;
+    className="w-full text-xs border border-gray-200 rounded-lg p-1.5 bg-white focus:ring-1 focus:ring-purple-200 outline-none">{children}</select>;
 }
-
-function Toggle({label, checked, onChange}) {
+function Toggle({label,checked,onChange}) {
   return (
     <label className="flex items-center gap-1.5 cursor-pointer select-none">
-      <div className={`w-8 h-4 rounded-full transition-colors relative ${checked?"bg-green-400":"bg-gray-200"}`}
-        onClick={()=>onChange(!checked)}>
-        <div className={`w-3.5 h-3.5 bg-white rounded-full absolute top-0.5 transition-all shadow-sm ${checked?"left-4":"left-0.5"}`}/>
+      <div className={`w-8 h-4 rounded-full relative transition-colors ${checked?"bg-green-400":"bg-gray-200"}`} onClick={()=>onChange(!checked)}>
+        <div className={`w-3.5 h-3.5 bg-white rounded-full absolute top-0.5 shadow-sm transition-all ${checked?"left-4":"left-0.5"}`}/>
       </div>
       <span className={`text-xs ${checked?"text-green-700 font-medium":"text-gray-400"}`}>{label}</span>
     </label>
@@ -394,51 +473,38 @@ export default function App() {
             <span className="text-2xl font-bold text-purple-800" style={{fontFamily:'serif'}}>결</span>
             <span className="text-lg text-gray-600">하다</span>
           </div>
-          <p className="text-xs text-gray-400">소개 문구 생성기 v4 — 인증 기반 매력 조합</p>
+          <p className="text-xs text-gray-400">소개 문구 생성기 v5 — 스펙 교차 비교 + 인증 기반 매력 조합</p>
         </div>
 
         {/* Results */}
         <div className="grid md:grid-cols-2 gap-2.5 mb-3">
-          <div className={`rounded-2xl shadow-md p-5 border-2 transition-all ${isMale?"bg-white border-blue-200":"bg-white/60 border-gray-200"}`}>
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-blue-500"/>
-                <span className="text-xs text-blue-500 font-medium">남성 → 여성에게 표시</span>
+          {[{male:true,label:"남성 → 여성에게 표시",color:"blue",data:isMale?res:opp},
+            {male:false,label:"여성 → 남성에게 표시",color:"pink",data:!isMale?res:opp}].map(({male:m,label,color,data})=>(
+            <div key={label} className={`rounded-2xl shadow-md p-5 border-2 transition-all ${(m===isMale)?"bg-white border-"+color+"-200":"bg-white/60 border-gray-200"}`}>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-1.5">
+                  <span className={`w-1.5 h-1.5 rounded-full bg-${color}-500`}/>
+                  <span className={`text-xs text-${color}-500 font-medium`}>{label}</span>
+                </div>
+                {data.vCount > 0 && <span className="text-xs px-1.5 py-0.5 rounded bg-green-50 text-green-600">인증 {data.vCount}개</span>}
               </div>
-              {(isMale ? res : opp).verifiedCount > 0 && (
-                <span className="text-xs px-1.5 py-0.5 rounded bg-green-50 text-green-600">
-                  인증 {(isMale ? res : opp).verifiedCount}개
-                </span>
-              )}
+              <h2 className="text-lg md:text-xl font-bold text-gray-900">{data.tagline}</h2>
             </div>
-            <h2 className="text-lg md:text-xl font-bold text-gray-900">{isMale?res.tagline:opp.tagline}</h2>
-          </div>
-          <div className={`rounded-2xl shadow-md p-5 border-2 transition-all ${!isMale?"bg-white border-pink-200":"bg-white/60 border-gray-200"}`}>
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-pink-500"/>
-                <span className="text-xs text-pink-500 font-medium">여성 → 남성에게 표시</span>
-              </div>
-              {(!isMale ? res : opp).verifiedCount > 0 && (
-                <span className="text-xs px-1.5 py-0.5 rounded bg-green-50 text-green-600">
-                  인증 {(!isMale ? res : opp).verifiedCount}개
-                </span>
-              )}
-            </div>
-            <h2 className="text-lg md:text-xl font-bold text-gray-900">{!isMale?res.tagline:opp.tagline}</h2>
-          </div>
+          ))}
         </div>
 
+        {/* Detail */}
         <div className="text-center mb-4">
           <button onClick={()=>setDetail(!detail)} className="text-xs text-purple-400 hover:text-purple-600">
-            {detail?"▲ 접기":"▼ 선택된 매력 요소"}
+            {detail?"▲ 접기":"▼ 교차 비교 결과 보기"}
           </button>
           {detail && (
             <div className="mt-2 bg-white rounded-lg border p-3 text-left text-xs text-gray-600 space-y-1">
-              <p><strong>매력 요소:</strong> {res.selected.join(" / ") || "없음"}</p>
+              <p><strong>스펙 점수:</strong> {res.scores}</p>
+              <p><strong>승리 카테고리:</strong> {res.winner}</p>
               <p><strong>타이틀:</strong> {res.title}</p>
+              <p><strong>매력 요소:</strong> {res.selected.join(" / ") || "없음"}</p>
               <p><strong>성향:</strong> {res.t1}+{res.t2} → {res.traitText}</p>
-              <p><strong>옵션 인증:</strong> 키{profile.v_height?"✅":"❌"} 체형{profile.v_body?"✅":"❌"} 차{profile.v_car?"✅":"❌"} 부모자산{profile.v_parentAssets?"✅":"❌"} 수상{profile.v_contest?"✅":"❌"}</p>
             </div>
           )}
         </div>
@@ -477,122 +543,60 @@ export default function App() {
             <div className="bg-white rounded-xl shadow-sm border p-3.5">
               <h3 className="font-bold text-gray-700 text-sm mb-2">외모 (필수)</h3>
               <Sel value={profile.appearance} onChange={v=>s("appearance",v)}>
-                <option value="APPEARANCE_TOP_1">상위 1%</option>
-                <option value="APPEARANCE_TOP_5">상위 5%</option>
-                <option value="APPEARANCE_TOP_20">상위 20%</option>
-                <option value="APPEARANCE_HIGH_AVG">상위 35%</option>
-                <option value="APPEARANCE_ABOVE_AVG">평균 이상</option>
-                <option value="APPEARANCE_AVG">평균</option>
-                <option value="APPEARANCE_BELOW_AVG">평균 이하</option>
+                {Object.entries(APP_WORD).map(([k,v])=>(
+                  <option key={k} value={k}>{k.replace("APPEARANCE_","").replace(/_/g," ")}</option>
+                ))}
               </Sel>
             </div>
-
             <div className="bg-white rounded-xl shadow-sm border p-3.5">
-              <h3 className="font-bold text-gray-700 text-sm mb-2 flex items-center gap-1.5">
-                옵션 인증
-                <span className="text-xs font-normal text-gray-400">(토글 = 인증 여부)</span>
-              </h3>
+              <h3 className="font-bold text-gray-700 text-sm mb-2">옵션 인증 <span className="text-xs font-normal text-gray-400">(토글 = 인증 여부)</span></h3>
               <div className="space-y-2.5">
-                {/* 키 인증 */}
                 <div className="space-y-1">
                   <Toggle label="키 인증" checked={!!profile.v_height} onChange={v=>s("v_height",v)}/>
-                  {profile.v_height && (
-                    <Sel value={profile.height||""} onChange={v=>s("height",v)}>
-                      <option value="">선택</option>
-                      <option value="HEIGHT_OVER_180">180+</option>
-                      <option value="HEIGHT_OVER_175">175+</option>
-                      <option value="HEIGHT_OVER_165_175_UNDER">165~175</option>
-                    </Sel>
-                  )}
+                  {profile.v_height && <Sel value={profile.height||""} onChange={v=>s("height",v)}><option value="">선택</option><option value="HEIGHT_OVER_180">180+</option><option value="HEIGHT_OVER_175">175+</option><option value="HEIGHT_OVER_165_175_UNDER">165~175</option></Sel>}
                 </div>
-                {/* 체형 인증 */}
                 <div className="space-y-1">
                   <Toggle label="몸무게 인증" checked={!!profile.v_body} onChange={v=>s("v_body",v)}/>
                   {profile.v_body && (
-                    <div className="space-y-1.5">
+                    <div className="space-y-1">
                       <div className="grid grid-cols-2 gap-1.5">
-                        <div className="relative">
-                          <input type="number" placeholder="키(cm)" value={profile.heightCm||""} 
-                            onChange={e=>s("heightCm",parseInt(e.target.value)||0)}
-                            className="w-full text-xs border border-gray-200 rounded-lg p-1.5 pr-8 outline-none focus:ring-1 focus:ring-purple-200"/>
-                          <span className="absolute right-2 top-1.5 text-xs text-gray-300">cm</span>
-                        </div>
-                        <div className="relative">
-                          <input type="number" placeholder="몸무게(kg)" value={profile.weight||""} 
-                            onChange={e=>s("weight",parseInt(e.target.value)||0)}
-                            className="w-full text-xs border border-gray-200 rounded-lg p-1.5 pr-8 outline-none focus:ring-1 focus:ring-purple-200"/>
-                          <span className="absolute right-2 top-1.5 text-xs text-gray-300">kg</span>
-                        </div>
+                        <div className="relative"><input type="number" placeholder="키(cm)" value={profile.heightCm||""} onChange={e=>s("heightCm",parseInt(e.target.value)||0)} className="w-full text-xs border border-gray-200 rounded-lg p-1.5 pr-8 outline-none"/><span className="absolute right-2 top-1.5 text-xs text-gray-300">cm</span></div>
+                        <div className="relative"><input type="number" placeholder="몸무게(kg)" value={profile.weight||""} onChange={e=>s("weight",parseInt(e.target.value)||0)} className="w-full text-xs border border-gray-200 rounded-lg p-1.5 pr-8 outline-none"/><span className="absolute right-2 top-1.5 text-xs text-gray-300">kg</span></div>
                       </div>
                       <Toggle label="운동 체형 (근육질)" checked={!!profile.muscular} onChange={v=>s("muscular",v)}/>
-                      {profile.weight > 0 && profile.heightCm > 0 && (
-                        <p className="text-xs text-gray-400">
-                          BMI: {(profile.weight / Math.pow(profile.heightCm/100, 2)).toFixed(1)}
-                          {(() => {
-                            const bmi = profile.weight / Math.pow(profile.heightCm/100, 2);
-                            const max = profile.gender === "male" ? 25 : 23;
-                            const effMax = profile.muscular ? 30 : max;
-                            if (bmi >= 18.5 && bmi <= effMax) return " ✅ 정상";
-                            if (profile.gender === "female" && bmi >= 16 && bmi < 18.5) return " ✅ 슬림";
-                            return " ⚠️ 문구 미반영";
-                          })()}
-                        </p>
-                      )}
+                      {profile.weight > 0 && profile.heightCm > 0 && <p className="text-xs text-gray-400">BMI: {(profile.weight/Math.pow(profile.heightCm/100,2)).toFixed(1)} {(()=>{const b=profile.weight/Math.pow(profile.heightCm/100,2);const m=profile.gender==="male"?25:23;const e=profile.muscular?30:m;if(b>=18.5&&b<=e)return "✅ 정상";if(profile.gender==="female"&&b>=16&&b<18.5)return "✅ 슬림";return "⚠️ 문구 미반영";})()}</p>}
                     </div>
                   )}
                 </div>
-                {/* 미인대회/피트니스 수상 */}
-                <div className="space-y-1">
-                  <Toggle label="미인대회/피트니스대회 수상" checked={!!profile.v_contest} onChange={v=>s("v_contest",v)}/>
-                </div>
-                {/* 차 인증 */}
+                <Toggle label="미인대회/피트니스 수상" checked={!!profile.v_contest} onChange={v=>s("v_contest",v)}/>
                 <div className="space-y-1">
                   <Toggle label="차 인증" checked={!!profile.v_car} onChange={v=>s("v_car",v)}/>
                   {profile.v_car && (
                     <div className="space-y-1">
-                      <Sel value={profile.carBrand||""} onChange={v=>s("carBrand",v)}>
-                        {CAR_OPTS.map(([v,l])=><option key={v} value={v}>{l}</option>)}
-                      </Sel>
-                      <Sel value={profile.carPrice||""} onChange={v=>s("carPrice",parseInt(v)||0)}>
-                        <option value="0">차량 가격대</option>
-                        <option value="3000">3천만원 이하</option>
-                        <option value="5000">3~5천만원</option>
-                        <option value="7000">5~7천만원</option>
-                        <option value="8000">7~8천만원</option>
-                        <option value="9000">8~9천만원</option>
-                        <option value="10000">9천~1억</option>
-                        <option value="11000">1억 이상</option>
-                      </Sel>
+                      <Sel value={profile.carBrand||""} onChange={v=>s("carBrand",v)}>{CAR_OPTS.map(([v,l])=><option key={v} value={v}>{l}</option>)}</Sel>
+                      <Sel value={profile.carPrice||""} onChange={v=>s("carPrice",parseInt(v)||0)}><option value="0">차량 가격대</option><option value="5000">3~5천만</option><option value="7000">5~7천만</option><option value="8000">7~8천만</option><option value="9000">8~9천만</option><option value="11000">1억+</option></Sel>
                     </div>
                   )}
                 </div>
-                {/* 부모 자산 인증 */}
                 <div className="space-y-1">
                   <Toggle label="부모님 자산 인증" checked={!!profile.v_parentAssets} onChange={v=>s("v_parentAssets",v)}/>
-                  {profile.v_parentAssets && (
-                    <Sel value={profile.parentAssets||""} onChange={v=>s("parentAssets",v)}>
-                      <option value="">선택</option>
-                      <option value="PARENT_ASSET_OVER_100B">100억+</option>
-                      <option value="PARENT_ASSET_OVER_50B">50억+</option>
-                      <option value="PARENT_ASSET_OVER_30B">30억+</option>
-                    </Sel>
-                  )}
+                  {profile.v_parentAssets && <Sel value={profile.parentAssets||""} onChange={v=>s("parentAssets",v)}><option value="">선택</option><option value="PARENT_ASSET_OVER_100B">100억+</option><option value="PARENT_ASSET_OVER_50B">50억+</option><option value="PARENT_ASSET_OVER_30B">30억+</option><option value="PARENT_ASSET_OVER_10B">10억+</option></Sel>}
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Col 3: 직업/학력/자산 */}
+          {/* Col 3: 직업/학력/연봉/자산 */}
           <div className="space-y-3">
             <div className="bg-white rounded-xl shadow-sm border p-3.5">
-              <h3 className="font-bold text-gray-700 text-sm mb-2">직업 · 직장 카테고리</h3>
+              <h3 className="font-bold text-gray-700 text-sm mb-2">직업 · 직장</h3>
               <div className="space-y-1.5">
                 <Sel value={profile.occupation||""} onChange={v=>s("occupation",v)}>
                   <option value="">직업 선택</option>
                   {OCC_GROUPS.map((g,i)=>(<optgroup key={i} label={g.label}>{g.o.map(([v,l])=><option key={v} value={v}>{l}</option>)}</optgroup>))}
                 </Sel>
                 <Sel value={profile.companyCategory||""} onChange={v=>s("companyCategory",v)}>
-                  {COMP_CAT_OPTS.map(([v,l])=><option key={v} value={v}>{l}</option>)}
+                  {COMP_OPTS.map(([v,l])=><option key={v} value={v}>{l}</option>)}
                 </Sel>
               </div>
             </div>
@@ -604,6 +608,7 @@ export default function App() {
                   <option value="DOMESTIC_TOP_5_WORLD_50">SKY</option>
                   <option value="DOMESTIC_TOP_8_WORLD_100">주요 8개 대학</option>
                   <option value="DOMESTIC_TOP_20">주요 20개 대학</option>
+                  <option value="DOMESTIC_TOP_50_OVERSEAS">수도권/해외</option>
                 </Sel>
                 <Sel value={profile.university||""} onChange={v=>s("university",v)}>
                   {UNI_OPTS.map(([v,l])=><option key={v} value={v}>{l}</option>)}
@@ -615,27 +620,19 @@ export default function App() {
               <div className="space-y-1.5">
                 <Sel value={profile.salary||""} onChange={v=>s("salary",v)}>
                   <option value="">연봉</option>
-                  <option value="SALARY_OVER_200M">2억+</option>
-                  <option value="SALARY_150M_200M">1.5~2억</option>
-                  <option value="SALARY_100M_150M">1~1.5억</option>
-                  <option value="SALARY_70M_100M">7천~1억</option>
-                  <option value="SALARY_50M_70M">5~7천만</option>
-                  <option value="SALARY_30M_50M">3~5천만</option>
+                  {Object.entries(SALARY_MAP).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
                 </Sel>
                 <Sel value={profile.assets||""} onChange={v=>s("assets",v)}>
                   <option value="">본인 자산</option>
-                  <option value="ASSET_OVER_1B">10억+</option>
-                  <option value="ASSET_500M_1B">5~10억</option>
+                  {Object.entries(ASSET_MAP).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
                 </Sel>
               </div>
             </div>
           </div>
         </div>
-
-        {/* Footer */}
         <div className="mt-5 text-center text-xs text-gray-300 space-y-0.5">
-          <p>옵션 인증(키·체형·차·부모자산)을 켜면 해당 매력 요소가 문구에 반영됩니다</p>
-          <p>직장명은 개인정보 보호를 위해 카테고리(대기업/공기업 등)만 표시합니다</p>
+          <p>학력·직업·연봉·자산을 교차 비교하여 가장 높은 점수의 카테고리가 타이틀을 결정합니다</p>
+          <p>옵션 인증을 켜면 매력 수식어에 반영 | 성향은 항상 반영되어 저등급도 문구 보장</p>
         </div>
       </div>
     </div>
