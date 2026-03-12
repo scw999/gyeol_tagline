@@ -72,17 +72,51 @@ const CONTEST_CHARM = { male: "피트니스대회 수상 경력의", female: "�
 
 // ── 4. 통합 점수 매핑 (기술명세서 2.1절) ──
 
-// 학력 통합 점수
+// 학력 통합 점수 (등급 매핑 테이블 전체 반영)
 const EDU_SCORE = {
-  DOMESTIC_TOP_5_WORLD_50: 10,  // SKY
-  DOMESTIC_TOP_8_WORLD_100: 9,  // 성균관/한양
-  DOMESTIC_TOP_20: 7,
-  DOMESTIC_TOP_50_OVERSEAS: 5,
+  WORLD_TOP_10: 11,              // Harvard, MIT, Stanford, Cambridge, Oxford 등
+  DOMESTIC_TOP_5_WORLD_50: 10,   // SKY, KAIST, POSTECH + Ivy League급
+  DOMESTIC_TOP_8_WORLD_100: 9,   // 성균관/한양/서강 + 세계 100위권
+  DOMESTIC_TOP_20: 7,            // 중앙/경희/이화 + GIST/UNIST
+  DOMESTIC_TOP_50_OVERSEAS: 5,   // 홍익/숙명 + 해외 일반
+  GENERAL_4YEAR: 3,              // 일반 4년제
+  ASSOCIATE_DEGREE: 1,           // 전문대
+  HIGH_SCHOOL: 0,                // 고졸/검정고시
 };
 
 // 학력 → 타이틀 컨텍스트
-const UNI_NAMES = { seoul:"서울대", yonsei:"연세대", korea:"고려대", skku:"성균관대", hanyang:"한양대" };
+const UNI_NAMES = {
+  // 국내 SKY
+  seoul:"서울대", yonsei:"연세대", korea:"고려대",
+  // 국내 과기원
+  kaist:"KAIST", postech:"포항공대",
+  // 국내 주요 8
+  skku:"성균관대", hanyang:"한양대", sogang:"서강대",
+  // 국내 주요 20
+  chungang:"중앙대", kyunghee:"경희대", hufs:"한국외대", uos:"서울시립대",
+  ewha:"이화여대", konkuk:"건국대", dongguk:"동국대", ajou:"아주대",
+  pusan:"부산대", knu:"경북대", gist:"GIST", unist:"UNIST",
+  // 세계 Top 10
+  harvard:"Harvard", stanford:"Stanford", mit:"MIT",
+  cambridge:"Cambridge", oxford:"Oxford", caltech:"Caltech",
+  ethz:"ETH Zurich", imperial:"Imperial College", ucl:"UCL", nus:"NUS",
+  // 세계 Top 50
+  princeton:"Princeton", yale:"Yale", columbia:"Columbia",
+  uchicago:"U of Chicago", upenn:"UPenn", berkeley:"UC Berkeley",
+  ucla:"UCLA", nyu:"NYU", duke:"Duke", cornell:"Cornell",
+  northwestern:"Northwestern", jhu:"Johns Hopkins",
+  utoronto:"U of Toronto", ubc:"UBC", mcgill:"McGill",
+  unimelb:"U of Melbourne", sydney:"U of Sydney",
+  tokyo:"도쿄대", kyoto:"교토대",
+  peking:"북경대", tsinghua:"칭화대",
+  hku:"HKU", ntu_sg:"NTU Singapore",
+  // 세계 100위권
+  lse:"LSE", kcl:"KCL", epfl:"EPFL",
+  tum:"TU Munich", warwick:"Warwick",
+  monash:"Monash", osaka:"오사카대",
+};
 const EDU_CONTEXT = {
+  WORLD_TOP_10: "세계 명문대 출신",
   DOMESTIC_TOP_5_WORLD_50: "명문대 출신",
   DOMESTIC_TOP_8_WORLD_100: "명문대 출신",
   DOMESTIC_TOP_20: "주요 대학 출신",
@@ -228,141 +262,161 @@ function attachOf(s) { return s.endsWith("의") ? s : s + "의"; }
 function stripOf(s) { return s.replace(/의$/, ""); }
 
 // ════════════════════════════════════════════
-// 문구 생성 함수 (기술명세서 전체 반영)
+// 문구 생성 함수 (v5.1: 성별별 결혼 매칭 우선순위)
+// 남성→여성: 키/체격 > 경제력(연봉·자산) > 학력 > 성향
+// 여성→남성: 외모 > 성향/분위기 > 직업 > 집안/자산
 // ════════════════════════════════════════════
 function generate(p) {
   const g = p.gender;
   const occName = (g === "female" && OCC_NAME_F[p.occupation]) || OCC_NAME[p.occupation] || "회원";
 
-  // ── STEP 1: 스펙 교차 비교 → 타이틀 결정 ──
+  // ── STEP 1: 스펙 교차 비교 (성별 가중치) ──
   const eduScore = EDU_SCORE[p.education] || 0;
   const occTier = OCC_TIERS[p.occupation] || "OTHERS_LOW";
   const occScore = OCC_TIER_SCORE[occTier] || 1;
   const salaryData = SALARY_MAP[p.salary] || { score: 0 };
   const assetData = ASSET_MAP[p.assets] || { score: 0 };
 
-  // 학력 컨텍스트
   let eduCtx = "";
   if (p.university && UNI_NAMES[p.university]) eduCtx = UNI_NAMES[p.university] + " 출신";
   else if (p.education && EDU_CONTEXT[p.education]) eduCtx = EDU_CONTEXT[p.education];
 
-  // 직장 카테고리
   const compCat = p.companyCategory ? COMP_CATEGORY[p.companyCategory] : null;
 
-  // 부모자산 (옵션)
   let famCtx = "";
   if (p.v_parentAssets && p.parentAssets && PARENT_TAG[p.parentAssets])
     famCtx = PARENT_TAG[p.parentAssets];
 
-  // 교차 비교: 4개 카테고리 중 최고 선택
+  // 남성: 학력·경제력 부각 / 여성: 직업·집안 부각
+  const tw = g === "male"
+    ? { edu: 1.3, occ: 1.0, salary: 1.2, asset: 1.1 }
+    : { edu: 0.7, occ: 1.0, salary: 0.8, asset: 0.9 };
+
   const scores = [
-    { cat: "edu", score: eduScore },
-    { cat: "occ", score: occScore },
-    { cat: "salary", score: salaryData.score },
-    { cat: "asset", score: assetData.score },
+    { cat: "edu",    score: Math.round(eduScore * tw.edu * 10) / 10 },
+    { cat: "occ",    score: Math.round(occScore * tw.occ * 10) / 10 },
+    { cat: "salary", score: Math.round(salaryData.score * tw.salary * 10) / 10 },
+    { cat: "asset",  score: Math.round(assetData.score * tw.asset * 10) / 10 },
   ].sort((a, b) => b.score - a.score);
 
   const winner = scores[0];
 
-  // 타이틀 조립
   let title = occName;
-
-  // 직업 점수 8+ (SPECIAL_PROFESSION 이상)이면 직업명만으로 충분
-  // 단, SKY(10점)이면 예외적으로 학력도 표시
   if (occScore >= 8) {
-    if (eduScore >= 10 && eduCtx) {
-      title = `${eduCtx} ${occName}`;
-    }
-    // else: 직업명만
+    if (g === "male" && eduScore >= 10 && eduCtx) title = `${eduCtx} ${occName}`;
   } else if (winner.cat === "edu" && eduCtx) {
     title = `${eduCtx} ${occName}`;
   } else if (winner.cat === "salary" && salaryData.titleBoost) {
     title = `${salaryData.titleBoost} ${occName}`;
-  } else if (compCat) {
-    // 직업이 "~직장인"이면 카테고리로 대체
-    if (occName.includes("직장인")) {
-      title = `${compCat} 직장인`;
-    }
-    // 전문직은 직업명으로 충분
+  } else if (compCat && occName.includes("직장인")) {
+    title = `${compCat} 직장인`;
   } else if (famCtx) {
     title = `${famCtx} ${occName}`;
   }
 
-  // ── STEP 2: 매력 후보 수집 ──
+  // ── STEP 2: 매력 후보 (성별별 우선순위) ──
   let candidates = [];
   const physTypes = ["appearance","height","body","car","contest","salary","asset"];
 
-  // 외모
+  // 외모: 여성 높게 유지, 남성은 경제력보다 낮게
   const appData = APP_WORD[p.appearance];
-  if (appData?.[g]) candidates.push({ text: appData[g], priority: appData.priority, type: "appearance" });
+  if (appData && appData[g]) {
+    const pri = g === "female" ? appData.priority : Math.max(appData.priority - 2, 1);
+    candidates.push({ text: appData[g], priority: pri, type: "appearance" });
+  }
 
-  // 키 (옵션)
-  if (p.v_height && p.height && HT_WORD[p.height]?.[g])
-    candidates.push({ text: HT_WORD[p.height][g], priority: 6, type: "height" });
+  // 키: 남성 결혼시장 핵심
+  if (p.v_height && p.height && HT_WORD[p.height] && HT_WORD[p.height][g])
+    candidates.push({ text: HT_WORD[p.height][g], priority: g === "male" ? 9 : 4, type: "height" });
 
-  // 체형 (옵션)
+  // 체형
   if (p.v_body && p.weight && p.heightCm) {
     const bt = calcBodyTier(p.weight, p.heightCm, g, !!p.muscular);
-    if (bt && BODY_CHARM[bt]?.[g])
-      candidates.push({ text: BODY_CHARM[bt][g], priority: bt === "fit_high" ? 5 : 4, type: "body" });
+    if (bt && BODY_CHARM[bt] && BODY_CHARM[bt][g]) {
+      const pri = g === "male" ? (bt === "fit_high" ? 8 : 6) : (bt === "fit_high" ? 6 : 4);
+      candidates.push({ text: BODY_CHARM[bt][g], priority: pri, type: "body" });
+    }
   }
 
-  // 미인대회 (옵션)
+  // 미인대회: 여성 최상위
   if (p.v_contest)
-    candidates.push({ text: CONTEST_CHARM[g], priority: 9, type: "contest" });
+    candidates.push({ text: CONTEST_CHARM[g], priority: g === "female" ? 11 : 7, type: "contest" });
 
-  // 차 (옵션)
+  // 차
   if (p.v_car && p.carBrand) {
     if (LUXURY_CARS.includes(p.carBrand))
-      candidates.push({ text: CAR_CHARM.luxury[g], priority: 5, type: "car" });
+      candidates.push({ text: CAR_CHARM.luxury[g], priority: g === "male" ? 7 : 4, type: "car" });
     else if (PREMIUM_CARS.includes(p.carBrand) && p.carPrice >= 8000)
-      candidates.push({ text: CAR_CHARM.premium[g], priority: 3, type: "car" });
+      candidates.push({ text: CAR_CHARM.premium[g], priority: g === "male" ? 5 : 3, type: "car" });
   }
 
-  // 연봉 매력 키워드 (타이틀에 이미 반영 안 된 경우만)
-  if (salaryData.charm && winner.cat !== "salary")
-    candidates.push({ text: salaryData.charm, priority: Math.min(salaryData.score / 2, 5), type: "salary" });
+  // 연봉: 남성 핵심, 여성 보조
+  if (salaryData.charm) {
+    const pri = g === "male"
+      ? Math.round(salaryData.score * 0.8)
+      : Math.round(salaryData.score * 0.3);
+    candidates.push({ text: salaryData.charm, priority: pri, type: "salary" });
+  }
 
-  // 자산 매력 키워드
-  if (assetData.charm && winner.cat !== "asset")
-    candidates.push({ text: assetData.charm, priority: Math.min(assetData.score / 2, 5), type: "asset" });
+  // 자산: 남성 핵심, 여성 중간
+  if (assetData.charm) {
+    const pri = g === "male"
+      ? Math.round(assetData.score * 0.8)
+      : Math.round(assetData.score * 0.5);
+    candidates.push({ text: assetData.charm, priority: pri, type: "asset" });
+  }
 
-  // 성향 (항상)
+  // 성향: 여성 분위기 중요(높게), 남성 보조(낮게)
   const pos = Object.entries(p.traits)
     .filter(([k]) => !["애착불안","애착회피"].includes(k))
     .sort((a,b) => b[1] - a[1]);
   const all = Object.entries(p.traits).sort((a,b) => b[1] - a[1]);
-  const t1 = pos[0]?.[0], t2 = pos[1]?.[0];
+  let t1 = pos[0] ? pos[0][0] : null;
+  let t2 = pos[1] ? pos[1][0] : null;
 
   let traitFull = "";
-  let traitShort = TRAIT_CHARM[t1]?.[g] || "";
-  const ck1 = `${t1}+${t2}`, ck2 = `${t2}+${t1}`;
-  if (COMBO_CHARM[ck1]?.[g]) traitFull = COMBO_CHARM[ck1][g];
-  else if (COMBO_CHARM[ck2]?.[g]) traitFull = COMBO_CHARM[ck2][g];
+  let traitShort = (t1 && TRAIT_CHARM[t1]) ? TRAIT_CHARM[t1][g] || "" : "";
+  const ck1 = t1 + "+" + t2, ck2 = t2 + "+" + t1;
+  if (COMBO_CHARM[ck1] && COMBO_CHARM[ck1][g]) traitFull = COMBO_CHARM[ck1][g];
+  else if (COMBO_CHARM[ck2] && COMBO_CHARM[ck2][g]) traitFull = COMBO_CHARM[ck2][g];
   else traitFull = traitShort;
 
-  if (all[0]?.[0] === "애착불안" && all[0][1] > (pos[0]?.[1]||0) + 1) {
+  if (all[0] && all[0][0] === "애착불안" && all[0][1] > ((pos[0] ? pos[0][1] : 0) + 1)) {
     traitFull = TRAIT_CHARM["애착불안"][g]; traitShort = traitFull;
+    t2 = t1; t1 = "애착불안";
   }
-  if (all[0]?.[0] === "애착회피" && all[0][1] > (pos[0]?.[1]||0) + 1) {
+  if (all[0] && all[0][0] === "애착회피" && all[0][1] > ((pos[0] ? pos[0][1] : 0) + 1)) {
     traitFull = TRAIT_CHARM["애착회피"][g]; traitShort = traitFull;
+    t2 = t1; t1 = "애착회피";
   }
 
-  if (traitFull) candidates.push({ text: traitFull, short: traitShort, priority: 7, type: "trait" });
+  if (traitFull)
+    candidates.push({ text: traitFull, short: traitShort, priority: g === "female" ? 8 : 5, type: "trait" });
 
-  // ── STEP 3: 후보 선택 (최대 2개: 물리 1 + 성향 1) ──
+  // ── STEP 3: 3카테고리 슬롯 선택 (최대 2개) ──
+  // 외형(appearance/height/body) / 경제력(salary/asset/car) / 성향(trait) / 특수(contest)
+  // 각 카테고리 내에서 최고 1개씩, 전체 최대 2개
+  const physCat = ["appearance","height","body"];
+  const econCat = ["salary","asset","car"];
+  const specCat = ["contest"];
+
   candidates.sort((a,b) => b.priority - a.priority);
-  let selected = [];
-  let hasPhys = false, hasTrait = false;
+
+  let bestPhys = null, bestEcon = null, bestTrait = null, bestSpec = null;
   for (const c of candidates) {
-    if (selected.length >= 2) break;
-    const isPhys = physTypes.includes(c.type);
-    if (isPhys && hasPhys) continue;
-    if (c.type === "trait" && hasTrait) continue;
-    selected.push(c);
-    if (isPhys) hasPhys = true;
-    if (c.type === "trait") hasTrait = true;
+    if (physCat.includes(c.type) && !bestPhys) bestPhys = c;
+    else if (econCat.includes(c.type) && !bestEcon) bestEcon = c;
+    else if (c.type === "trait" && !bestTrait) bestTrait = c;
+    else if (specCat.includes(c.type) && !bestSpec) bestSpec = c;
   }
+
+  // 특수(미인대회)가 있으면 최우선
+  let pool = [bestSpec, bestPhys, bestEcon, bestTrait].filter(Boolean);
+  pool.sort((a,b) => b.priority - a.priority);
+  let selected = pool.slice(0, 2);
+
+  // 조합용 분류
+  const nonTraitTypes = [...physCat, ...econCat, ...specCat];
 
   // ── STEP 4: 조합 ──
   let tagline = "";
@@ -371,19 +425,22 @@ function generate(p) {
   } else if (selected.length === 1) {
     tagline = attachOf(selected[0].text) + " " + title;
   } else {
-    const phys = selected.find(s => physTypes.includes(s.type));
-    const trait = selected.find(s => s.type === "trait");
-    if (phys && trait) {
-      const a = stripOf(phys.text);
+    const first = selected.find(function(s) { return nonTraitTypes.includes(s.type); });
+    const trait = selected.find(function(s) { return s.type === "trait"; });
+    if (first && trait) {
+      const a = stripOf(first.text);
       const b = stripOf(trait.short || trait.text);
       const overlap = ["매력","비주얼","외모","미모","이미지","분위기","라인","체격","인상","취향","감각"];
-      if (overlap.some(w => a.includes(w) && b.includes(w))) {
+      if (overlap.some(function(w) { return a.includes(w) && b.includes(w); })) {
         tagline = attachOf(selected[0].text) + " " + title;
       } else {
-        tagline = `${a}${waGwa(a)} ${b}${eulReul(b)} 갖춘 ${title}`;
+        tagline = a + waGwa(a) + " " + b + eulReul(b) + " 갖춘 " + title;
       }
     } else {
-      tagline = attachOf(selected[0].text) + " " + title;
+      // 둘 다 non-trait (예: 키 + 경제력)
+      const a = stripOf(selected[0].text);
+      const b = stripOf(selected[1].text);
+      tagline = a + waGwa(a) + " " + b + eulReul(b) + " 갖춘 " + title;
     }
   }
 
@@ -392,10 +449,10 @@ function generate(p) {
   const vCount = [p.v_height, p.v_body, p.v_car, p.v_parentAssets, p.v_contest].filter(Boolean).length;
 
   return {
-    tagline, title, traitText: traitFull, t1, t2, vCount,
-    selected: selected.map(s => `${s.type}(${s.priority}): ${s.text}`),
-    scores: scores.map(s => `${s.cat}:${s.score}`).join(" / "),
-    winner: `${winner.cat}(${winner.score})`,
+    tagline: tagline, title: title, traitText: traitFull, t1: t1, t2: t2, vCount: vCount,
+    selected: selected.map(function(s) { return s.type + "(" + s.priority + "): " + s.text; }),
+    scores: scores.map(function(s) { return s.cat + ":" + s.score; }).join(" / "),
+    winner: winner.cat + "(" + winner.score + ")",
   };
 }
 
@@ -419,7 +476,12 @@ const OCC_GROUPS = [
   { label:"서비스", o:[["aviation","승무원"],["beauty","뷰티"],["pilot","파일럿"]]},
 ];
 const COMP_OPTS = [["","선택안함"],["large","대기업"],["major_finance","주요금융권"],["major_public","주요공기업"],["other_public","기타공공기관"],["major_media","주요언론사"],["education","교육기관"],["government","정부기관"],["national_research","국공립연구소"],["medium","중견기업"]];
-const UNI_OPTS = [["","선택안함"],["seoul","서울대"],["yonsei","연세대"],["korea","고려대"],["skku","성균관대"],["hanyang","한양대"]];
+const UNI_BY_TIER = {
+  WORLD_TOP_10: [["harvard","Harvard"],["stanford","Stanford"],["mit","MIT"],["cambridge","Cambridge"],["oxford","Oxford"],["caltech","Caltech"],["ethz","ETH Zurich"],["imperial","Imperial College"],["ucl","UCL"],["nus","NUS"]],
+  DOMESTIC_TOP_5_WORLD_50: [["seoul","서울대"],["yonsei","연세대"],["korea","고려대"],["kaist","KAIST"],["postech","포항공대"],["princeton","Princeton"],["yale","Yale"],["columbia","Columbia"],["uchicago","U of Chicago"],["upenn","UPenn"],["berkeley","UC Berkeley"],["ucla","UCLA"],["nyu","NYU"],["duke","Duke"],["cornell","Cornell"],["northwestern","Northwestern"],["jhu","Johns Hopkins"],["utoronto","U of Toronto"],["unimelb","U of Melbourne"],["tokyo","도쿄대"],["kyoto","교토대"],["peking","북경대"],["tsinghua","칭화대"],["hku","HKU"]],
+  DOMESTIC_TOP_8_WORLD_100: [["skku","성균관대"],["hanyang","한양대"],["sogang","서강대"],["lse","LSE"],["kcl","KCL"],["epfl","EPFL"],["tum","TU Munich"],["warwick","Warwick"],["monash","Monash"],["osaka","오사카대"]],
+  DOMESTIC_TOP_20: [["chungang","중앙대"],["kyunghee","경희대"],["hufs","한국외대"],["uos","서울시립대"],["ewha","이화여대"],["konkuk","건국대"],["dongguk","동국대"],["ajou","아주대"],["pusan","부산대"],["knu","경북대"],["gist","GIST"],["unist","UNIST"]],
+};
 const CAR_OPTS = [["","미인증"],["porsche","포르쉐"],["lamborghini","람보르기니"],["ferrari","페라리"],["bentley","벤틀리"],["rolls_royce","롤스로이스"],["maserati","마세라티"],["mercedes_benz","벤츠"],["bmw","BMW"],["audi","아우디"],["lexus","렉서스"],["genesis","제네시스"],["tesla","테슬라"],["land_rover","랜드로버"],["volvo","볼보"],["hyundai","현대"],["kia","기아"]];
 
 const P0 = { gender:"male", traits:{개방성:3,성실성:3,외향성:3,우호성:3,정서안정:3,애착안정:3,애착불안:1,애착회피:1},
@@ -603,16 +665,23 @@ export default function App() {
             <div className="bg-white rounded-xl shadow-sm border p-3.5">
               <h3 className="font-bold text-gray-700 text-sm mb-2">학력</h3>
               <div className="space-y-1.5">
-                <Sel value={profile.education||""} onChange={v=>s("education",v)}>
+                <Sel value={profile.education||""} onChange={v=>{s("education",v); s("university","");}}>
                   <option value="">해당 없음</option>
-                  <option value="DOMESTIC_TOP_5_WORLD_50">SKY</option>
-                  <option value="DOMESTIC_TOP_8_WORLD_100">주요 8개 대학</option>
+                  <option value="WORLD_TOP_10">세계 Top 10 (Harvard, MIT, Oxford 등)</option>
+                  <option value="DOMESTIC_TOP_5_WORLD_50">SKY / 세계 Top 50</option>
+                  <option value="DOMESTIC_TOP_8_WORLD_100">주요 8개 대학 / 세계 Top 100</option>
                   <option value="DOMESTIC_TOP_20">주요 20개 대학</option>
-                  <option value="DOMESTIC_TOP_50_OVERSEAS">수도권/해외</option>
+                  <option value="DOMESTIC_TOP_50_OVERSEAS">수도권/해외 대학</option>
+                  <option value="GENERAL_4YEAR">일반 4년제</option>
+                  <option value="ASSOCIATE_DEGREE">전문대</option>
+                  <option value="HIGH_SCHOOL">고졸/검정고시</option>
                 </Sel>
-                <Sel value={profile.university||""} onChange={v=>s("university",v)}>
-                  {UNI_OPTS.map(([v,l])=><option key={v} value={v}>{l}</option>)}
-                </Sel>
+                {profile.education && UNI_BY_TIER[profile.education] && (
+                  <Sel value={profile.university||""} onChange={v=>s("university",v)}>
+                    <option value="">대학 선택</option>
+                    {UNI_BY_TIER[profile.education].map(([v,l])=><option key={v} value={v}>{l}</option>)}
+                  </Sel>
+                )}
               </div>
             </div>
             <div className="bg-white rounded-xl shadow-sm border p-3.5">
