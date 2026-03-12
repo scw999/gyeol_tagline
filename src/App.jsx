@@ -10,55 +10,67 @@ import { useState, useMemo, useCallback } from "react";
 
 // ── 1. 성향 키워드 ──
 const TRAIT_CHARM = {
-  개방성:   { male: "지적 호기심",      female: "감각적 취향" },
+  개방성:   { male: "지적 호기심",      female: "감각적 센스" },
   성실성:   { male: "믿음직한 책임감",  female: "차분한 실행력" },
   외향성:   { male: "유쾌한 에너지",    female: "밝은 에너지" },
-  우호성:   { male: "따뜻한 배려심",    female: "다정한 따뜻함" },
-  정서안정: { male: "든든한 안정감",    female: "차분한 단단함" },
-  애착안정: { male: "든든한 신뢰감",    female: "편안한 포근함" },
+  우호성:   { male: "따뜻한 배려심",    female: "다정한 마음씨" },
+  정서안정: { male: "든든한 안정감",    female: "차분한 내면" },
+  애착안정: { male: "든든한 신뢰감",    female: "편안한 온기" },
   애착불안: { male: "깊은 진심",        female: "깊은 애정" },
   애착회피: { male: "쿨한 독립심",      female: "당당한 주관" },
 };
 
 const COMBO_CHARM = {
   "개방성+외향성":    { male: "활기와 지적 호기심",      female: "밝은 감각과 열린 시선" },
-  "개방성+우호성":    { male: "열린 마음과 따뜻한 배려",  female: "감각적 취향과 따뜻함" },
+  "개방성+우호성":    { male: "열린 마음과 따뜻한 배려",  female: "감각과 따뜻한 마음" },
   "개방성+성실성":    { male: "지적 호기심과 탄탄한 실력", female: "감각과 실행력" },
   "개방성+정서안정":  { male: "지적인 차분함",            female: "감각적 여유" },
-  "성실성+우호성":    { male: "책임감과 따뜻한 배려",     female: "차분한 다정함" },
+  "성실성+우호성":    { male: "책임감과 따뜻한 배려",     female: "성실함과 다정한 마음" },
   "성실성+정서안정":  { male: "묵직한 신뢰감",            female: "단단한 책임감" },
-  "성실성+애착안정":  { male: "한결같은 믿음직함",        female: "성실하고 편안한 온기" },
+  "성실성+애착안정":  { male: "한결같은 믿음직함",        female: "성실함과 편안한 온기" },
   "외향성+우호성":    { male: "유쾌함과 따뜻한 배려",     female: "밝은 에너지와 다정함" },
   "외향성+애착안정":  { male: "밝은 에너지와 든든함",     female: "즐거운 활기와 편안함" },
-  "외향성+정서안정":  { male: "활기와 안정감",            female: "밝으면서 차분한 여유" },
+  "외향성+정서안정":  { male: "활기와 안정감",            female: "밝고 차분한 여유" },
   "우호성+애착안정":  { male: "따뜻함과 든든한 신뢰",     female: "다정함과 편안한 온기" },
   "우호성+정서안정":  { male: "편안한 배려심",            female: "따뜻한 안정감" },
   "정서안정+애착안정":{ male: "흔들림 없는 든든함",       female: "편안한 안정감" },
   "개방성+애착회피":  { male: "자유로운 지적 감각",       female: "독립적인 감각" },
-  "성실성+외향성":    { male: "실행력과 유쾌한 에너지",   female: "활발함과 차분한 실력" },
+  "성실성+외향성":    { male: "실행력과 유쾌한 에너지",   female: "밝은 성실함" },
 };
 
-// ── 2. 외모 키워드 ──
+// ── 2. 외모 키워드 (배열로 베리에이션) ──
+// ── 2. 외모 키워드 (배열로 베리에이션) ──
+// 원칙: "~한 이미지"는 전체 인상이므로 사진과 충돌 안 함 ✅
+// "~한 외모/미모/비주얼"도 추상적이므로 안전 ✅
+// ❌ 구체적 묘사만 금지: "예쁜 미소", "상큼한 분위기" 등
 const APP_WORD = {
-  APPEARANCE_TOP_1:    { male: "압도적 비주얼",   female: "눈부신 비주얼",      priority: 10 },
-  APPEARANCE_TOP_5:    { male: "훈훈한 외모",     female: "돋보이는 미모",       priority: 8 },
-  APPEARANCE_TOP_20:   { male: "호감형 외모",     female: "사랑스러운 이미지",   priority: 5 },
-  APPEARANCE_HIGH_AVG: { male: "깔끔한 인상",     female: "밝은 인상",           priority: 3 },
-  APPEARANCE_ABOVE_AVG:{ male: "호감 가는 인상",  female: "밝은 분위기",         priority: 1 },
-  APPEARANCE_AVG:      { male: null, female: null, priority: 0 },
+  APPEARANCE_TOP_1:    { male: ["압도적 비주얼","넘사벽 비주얼","시선을 사로잡는 외모","범접할 수 없는 비주얼"],
+                         female: ["눈부신 비주얼","압도적 아름다움","넘사벽 비주얼","시선을 사로잡는 미모"], priority: 10 },
+  APPEARANCE_TOP_5:    { male: ["훈훈한 외모","눈에 띄는 외모","잘생긴 외모","호감형 비주얼","세련된 외모"],
+                         female: ["돋보이는 미모","빼어난 미모","눈에 띄는 미모","여성스러운 이미지","사랑스러운 이미지"], priority: 8 },
+  APPEARANCE_TOP_20:   { male: ["호감형 외모","준수한 외모","단정한 외모","댄디한 이미지","깔끔한 외모"],
+                         female: ["매력적인 외모","눈길을 끄는 미모","호감형 외모","사랑스러운 이미지","청순한 이미지"], priority: 5 },
+  APPEARANCE_HIGH_AVG: { male: ["깔끔한 인상","단정한 인상","호감 가는 이미지","깔끔한 이미지","신뢰감 있는 인상"],
+                         female: ["호감 가는 인상","단정한 인상","여성스러운 이미지","청순한 이미지","단아한 이미지"], priority: 2 },
+  APPEARANCE_ABOVE_AVG:{ male: ["호감 가는 이미지","깔끔한 이미지","편안한 이미지"],
+                         female: ["호감 가는 이미지","단정한 이미지","단아한 이미지"], priority: 1 },
+  APPEARANCE_AVG:      { male: ["친근한 이미지","편안한 이미지"],
+                         female: ["친근한 이미지","편안한 이미지"], priority: 0 },
   APPEARANCE_BELOW_AVG:{ male: null, female: null, priority: 0 },
 };
 
-// ── 3. 키/체형/차/미인대회 키워드 ──
+// ── 3. 키/체형/차/미인대회 키워드 (배열 베리에이션) ──
 const HT_WORD = {
-  HEIGHT_OVER_180:           { male: "훤칠한 키",   female: null },
-  HEIGHT_OVER_175:           { male: "좋은 체격",   female: null },
-  HEIGHT_OVER_165_175_UNDER: { male: null,          female: "늘씬한 라인" },
+  HEIGHT_OVER_180:           { male: ["훤칠한 키","장신의 매력","큰 키"],   female: null },
+  HEIGHT_OVER_175:           { male: ["좋은 체격","균형 잡힌 체격"],         female: null },
+  HEIGHT_OVER_165_175_UNDER: { male: null, female: ["늘씬한 라인","시원한 비율","균형 잡힌 라인"] },
 };
 
 const BODY_CHARM = {
-  fit_high: { male: "탄탄한 체격",  female: "건강미 넘치는 바디" },
-  fit:      { male: "좋은 체격",    female: "날씬한 라인" },
+  fit_high: { male: ["탄탄한 체격","다져진 체격","운동으로 단련된 체격"],
+              female: ["건강미 넘치는 바디","탄탄한 바디라인","건강한 아름다움"] },
+  fit:      { male: ["좋은 체격","균형 잡힌 체격","건강한 체격"],
+              female: ["날씬한 라인","슬림한 라인","균형 잡힌 라인"] },
 };
 
 const CAR_CHARM = {
@@ -261,6 +273,14 @@ function eulReul(s) { return hasBatchim(s) ? "을" : "를"; }
 function attachOf(s) { return s.endsWith("의") ? s : s + "의"; }
 function stripOf(s) { return s.replace(/의$/, ""); }
 
+// ── 랜덤 선택 (배열에서 1개) ──
+function pick(arr) {
+  if (!arr) return null;
+  if (typeof arr === "string") return arr;
+  if (!Array.isArray(arr) || arr.length === 0) return null;
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
 // ════════════════════════════════════════════
 // 문구 생성 함수 (v5.1: 성별별 결혼 매칭 우선순위)
 // 남성→여성: 키/체격 > 경제력(연봉·자산) > 학력 > 성향
@@ -320,21 +340,29 @@ function generate(p) {
 
   // 외모: 여성 높게 유지, 남성은 경제력보다 낮게
   const appData = APP_WORD[p.appearance];
-  if (appData && appData[g]) {
-    const pri = g === "female" ? appData.priority : Math.max(appData.priority - 2, 1);
-    candidates.push({ text: appData[g], priority: pri, type: "appearance" });
+  if (appData) {
+    const appText = pick(appData[g]);
+    if (appText) {
+      const pri = g === "female" ? appData.priority : Math.max(appData.priority - 2, 1);
+      candidates.push({ text: appText, priority: pri, type: "appearance" });
+    }
   }
 
   // 키: 남성 결혼시장 핵심
-  if (p.v_height && p.height && HT_WORD[p.height] && HT_WORD[p.height][g])
-    candidates.push({ text: HT_WORD[p.height][g], priority: g === "male" ? 9 : 4, type: "height" });
+  if (p.v_height && p.height && HT_WORD[p.height]) {
+    const htText = pick(HT_WORD[p.height][g]);
+    if (htText) candidates.push({ text: htText, priority: g === "male" ? 9 : 4, type: "height" });
+  }
 
   // 체형
   if (p.v_body && p.weight && p.heightCm) {
     const bt = calcBodyTier(p.weight, p.heightCm, g, !!p.muscular);
-    if (bt && BODY_CHARM[bt] && BODY_CHARM[bt][g]) {
-      const pri = g === "male" ? (bt === "fit_high" ? 8 : 6) : (bt === "fit_high" ? 6 : 4);
-      candidates.push({ text: BODY_CHARM[bt][g], priority: pri, type: "body" });
+    if (bt && BODY_CHARM[bt]) {
+      const bodyText = pick(BODY_CHARM[bt][g]);
+      if (bodyText) {
+        const pri = g === "male" ? (bt === "fit_high" ? 8 : 6) : (bt === "fit_high" ? 6 : 4);
+        candidates.push({ text: bodyText, priority: pri, type: "body" });
+      }
     }
   }
 
